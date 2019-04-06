@@ -29,6 +29,16 @@ void setup()
   updateSerial();
   mySerial.println("AT+CMGS=\"+013126628734\"");//change ZZ with country code and xxxxxxxxxxx with phone number to sms
   updateSerial();
+
+/*
+  mySerial.println("AT+CSQ"); //Signal quality test, value range is 0-31 , 31 is the best
+  updateSerial();
+  mySerial.println("AT+CCID"); //Read SIM information to confirm whether the SIM is plugged
+  updateSerial();
+  mySerial.println("AT+CREG?"); //Check whether it has registered in the network
+  updateSerial();
+
+*/
   mySerial.print("Do you want to commercialize?"); //text content  
   Serial.println("Text sent?"); 
   updateSerial();
