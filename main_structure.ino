@@ -31,9 +31,9 @@ const int SDcard_MOSI = 11;
 const int SDcard_MISO = 12;
 const int SDcard_SCK = 13;
 const int pH_sen = A0;
-const int LED1 = A1;
-const int LED2 = A2;
-const int LED3 = A3;
+const int LED1 = A1; //blink when taking data
+const int LED2 = A2; //blink when water BAD
+const int LED3 = A3; //blink when text message sent
 const int LCD_SDA = A4;
 const int LCD_SCL = A5;
 
@@ -260,6 +260,11 @@ void setup() {
 
   time_interval = 1000*(60*(10*time_number[0] + time_number[1]) + (10*time_number[2]) + time_number[3]); //in milliseconds
   Serial.println(time_interval);
+  
+  pinMode(LED1, OUTPUT); //initialize LEDs
+  pinMode(LED2, OUTPUT);
+  pinMode(LED3, OUTPUT);
+  
   GPSSerial.begin(9600);
   startMillis = millis();
 }
@@ -269,6 +274,8 @@ void loop() {
   elapsedMillis = currentMillis - startMillis;
   if (elapsedMillis >= time_interval){
     Serial.print("-TIME-");
+
+    digitalWrite(LED1, HIGH); //signal that data is being collected!
     
     //collect GPS /////////////////////////////////////////////
     bool newdata = false;
@@ -291,7 +298,6 @@ void loop() {
       
       gps.get_position(&lat, &lon, &age);
       Serial.print("Lat/Long(10^-5 deg): "); Serial.print(lat); Serial.print(", "); Serial.print(lon);
-      //gpsdump(gps);
       Serial.println("-------------");
     }
 
