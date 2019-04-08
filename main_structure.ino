@@ -52,7 +52,15 @@ unsigned long elapsedMillis;
 unsigned long time_interval; //between 1 second and 59min,59sec
 
 SoftwareSerial GPSSerial(6,5); //(rx, tx) on MCU
-TinyGPS GPS;
+TinyGPS gps;
+void gpsdump(TinyGPS &gps);
+long lat, lon;
+unsigned long age;
+
+int lat_int, lon_int; //get digits before decimal (there will be six digits after decimal!)
+long lat_int_small, lon_int_small; //get digits after decimal
+
+
 
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors_temp(&oneWire);
@@ -252,6 +260,7 @@ void setup() {
 
   time_interval = 1000*(60*(10*time_number[0] + time_number[1]) + (10*time_number[2]) + time_number[3]); //in milliseconds
   Serial.println(time_interval);
+  GPSSerial.begin(9600);
   startMillis = millis();
 }
 
@@ -261,15 +270,34 @@ void loop() {
   if (elapsedMillis >= time_interval){
     Serial.print("-TIME-");
     
-    //collect temp
-    sensors_temp.requestTemperatures();
-    temp = sensors_temp.getTempCByIndex(0); //gets temperature in celcius
-
-
-
-
-
+    //collect GPS /////////////////////////////////////////////
+    bool newdata = false;
+    if (GPSSerial.available()) {
+      char c = GPSSerial.read();
+      if (gps.encode(c)) {
+        newdata = true;      
+      }
+    } else {
+      Serial.print("serial not available \n");
+    }
     
+    if (newdata) {
+      Serial.println("Acquired GPS Data");
+      lat_int = lat/1000000;
+      lat_int_small = lat - (lat_int * 1000000);
+      
+      lon_int = lon/1000000;
+      lon_int_small = lon - (lon_int * 1000000);
+      
+      gps.get_position(&lat, &lon, &age);
+      Serial.print("Lat/Long(10^-5 deg): "); Serial.print(lat); Serial.print(", "); Serial.print(lon);
+      //gpsdump(gps);
+      Serial.println("-------------");
+    }
+
+
+
+    //
     startMillis = currentMillis; //RESET COUNTDOWN
   }
 
@@ -278,18 +306,16 @@ void loop() {
 }
 
 
-
-
 /* PSEUDOCODE ----------------------------
  * -import required libraries
  * -assign pins for each compoment
  * 
  * SETUP
- * -initialization of buttons
- * -initialization of LCD display
- * -display welcome message
- * -collect time interval from user via buttons
- * -collect phone number via buttons
+ * -initialization of buttons                            DONE
+ * -initialization of LCD display                        DONE
+ * -display welcome message                              DONE
+ * -collect time interval from user via buttons          DONE
+ * -collect phone number via buttons                     DONE
  * -initialization of GSM
  * -initialization of GPS
  * -initialization of pH, temp sensors
