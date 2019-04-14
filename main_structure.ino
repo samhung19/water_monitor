@@ -14,6 +14,9 @@ LiquidCrystal_I2C lcd(0x27,16,2); // set the LCD address to 0x27 for a 16 chars 
 #include <SoftwareSerial.h>
 #include <TinyGPS.h>
 
+//SDCARD LIBRARIES
+#include <SPI.h>
+#include <SD.h>
 
 //PIN NUMBERS
 const int GSM_TDR = 0;
@@ -39,7 +42,6 @@ const int LCD_SCL = A5;
 
 
 //VARIABLES and DEFINITIONS
-#define ONE_WIRE_BUS 6
 
 int buttonState_left = 0;   // variable for reading the pushbutton status
 int buttonState_right = 0;
@@ -49,7 +51,7 @@ int buttonState_reset = 0;
 unsigned long startMillis;
 unsigned long currentMillis;
 unsigned long elapsedMillis;
-unsigned long time_interval; //between 1 second and 59min,59sec
+float time_interval; //between 1 second and 59min,59sec
 
 SoftwareSerial GPSSerial(6,5); //(rx, tx) on MCU
 TinyGPS gps;
@@ -61,10 +63,21 @@ int lat_int, lon_int; //get digits before decimal (there will be six digits afte
 long lat_int_small, lon_int_small; //get digits after decimal
 
 
+//PH vars
+#define Offset 0.2 //deviation compensate
+#define samplingInterval 20
+#define ArrayLenth 40 //times of collection
+int pHArray[ArrayLenth]; //Store the average value of the sensor
+int pHArrayIndex=0;
 
+//temperature vars
+#define ONE_WIRE_BUS 1
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors_temp(&oneWire);
 float temp = 0; //CELCIUS
+
+File dataFile;
+
 
 void setup() {
   Serial.begin(9600);
@@ -258,59 +271,148 @@ void setup() {
   lcd.setCursor(0,0);
 
 
-  time_interval = 1000*(60*(10*time_number[0] + time_number[1]) + (10*time_number[2]) + time_number[3]); //in milliseconds
-  Serial.println(time_interval);
+  
+  time_interval = 1000.0*(60.0*(10.0*time_number[0] + time_number[1]) + (10.0*time_number[2]) + time_number[3]); //in milliseconds
+  Serial.print(time_interval);
+  Serial.print(" ms");
   
   pinMode(LED1, OUTPUT); //initialize LEDs
   pinMode(LED2, OUTPUT);
   pinMode(LED3, OUTPUT);
   
   GPSSerial.begin(9600);
+
+  sensors_temp.begin();
+
+  SD.begin(4); //digital pin 4 on our MCU
+  dataFile = SD.open("data.txt", FILE_WRITE);
+  
   startMillis = millis();
 }
 
 void loop() {
   currentMillis = millis();
   elapsedMillis = currentMillis - startMillis;
+  
+    
+  //collect GPS /////////////////////////////////////////////
+  bool newdata = false;
+  if (GPSSerial.available()) {
+    char c = GPSSerial.read();
+    if (gps.encode(c)) {
+      newdata = true;      
+    }
+  } 
+  
+  if (newdata) {
+    Serial.println("Acquired GPS Data");
+    lat_int = lat/1000000;
+    lat_int_small = lat - (lat_int * 1000000);
+    
+    lon_int = lon/1000000;
+    lon_int_small = lon - (lon_int * 1000000);
+    
+    gps.get_position(&lat, &lon, &age);
+    Serial.print("Lat/Long(10^-5 deg): "); Serial.print(lat); Serial.print(", "); Serial.print(lon);
+    Serial.println("-------------");
+  }
+
+  /// COLLECT PH //////////////////
+
+ static unsigned long samplingTime = millis();
+ static float pHValue,voltage;
+ if(millis()-samplingTime > samplingInterval)
+ {
+   pHArray[pHArrayIndex++]=analogRead(pH_sen);
+   if(pHArrayIndex==ArrayLenth) pHArrayIndex=0;
+   voltage = avergearray(pHArray, ArrayLenth)*5.0/1024;
+   pHValue = 3.5*voltage+Offset;
+   samplingTime=millis();
+   
+   lcd.setCursor(0, 1);
+   lcd.print(phValue);
+ }
+
+ //COLLECT TEMP////////////////////
+ sensors_temp.requestTemperatures();
+ temp = sensors_temp.getTempCByIndex(0);
+
+
+
+
+
+
+
   if (elapsedMillis >= time_interval){
     Serial.print("-TIME-");
 
-    digitalWrite(LED1, HIGH); //signal that data is being collected!
+    analogWrite(LED1, 1024); //signal that data is being collected!
+
+
+
+    Serial.print("Voltage:");
+    Serial.print(voltage,2);
+    Serial.print(" pH value: ");
+    Serial.println(pHValue,2);
+
+    Serial.print(temp);
+    Serial.print(" C");
+
+
+    dataFile.println("WATER QUALITY: BAD");
+    dataFile.print("Temp: ");
+    dataFile.print("pH: ");
+    dataFile.print("GPS: ");
+ 
     
-    //collect GPS /////////////////////////////////////////////
-    bool newdata = false;
-    if (GPSSerial.available()) {
-      char c = GPSSerial.read();
-      if (gps.encode(c)) {
-        newdata = true;      
-      }
-    } else {
-      Serial.print("serial not available \n");
-    }
-    
-    if (newdata) {
-      Serial.println("Acquired GPS Data");
-      lat_int = lat/1000000;
-      lat_int_small = lat - (lat_int * 1000000);
-      
-      lon_int = lon/1000000;
-      lon_int_small = lon - (lon_int * 1000000);
-      
-      gps.get_position(&lat, &lon, &age);
-      Serial.print("Lat/Long(10^-5 deg): "); Serial.print(lat); Serial.print(", "); Serial.print(lon);
-      Serial.println("-------------");
-    }
-
-
-
     //
     startMillis = currentMillis; //RESET COUNTDOWN
+    analogWrite(LED1, 0);
   }
 
 
   
 }
 
+
+double avergearray(int* arr, int number){
+ int i;
+ int max,min;
+ double avg;
+ long amount=0;
+ if(number<=0){
+   Serial.println("Error number for the array to avraging!/n");
+   return 0;
+ } 
+ if(number<5){ //less than 5, calculated directly statistics
+   for(i=0;i<number;i++){
+    amount+=arr[i];
+   }
+  avg = amount/number;
+  return avg;
+ } else {
+ if(arr[0]<arr[1]){
+  min = arr[0];max=arr[1];
+ } else{
+  min=arr[1];max=arr[0];
+ }
+ for(i=2;i<number;i++){
+   if(arr[i]<min){
+     amount+=min; //arr<min
+     min=arr[i];
+   } else {
+     if(arr[i]>max){
+       amount+=max; //arr>max
+       max=arr[i];
+     } else{
+      amount+=arr[i]; //min<=arr<=max
+     }
+   }
+ }
+ avg = (double)amount/(number-2);
+ }
+ return avg;
+} 
 
 /* PSEUDOCODE ----------------------------
  * -import required libraries
@@ -323,7 +425,7 @@ void loop() {
  * -collect time interval from user via buttons          DONE
  * -collect phone number via buttons                     DONE
  * -initialization of GSM
- * -initialization of GPS
+* -initialization of GPS                                 DONE
  * -initialization of pH, temp sensors
  * -initialization of LED's
  *  
@@ -331,9 +433,9 @@ void loop() {
  * -check countdown
  * --collect temp
  * --collect pH
- * --collect GPS
+ * --collect GPS                                         DONE
  * --evaluate pH data, check for 6.5-8.5 range
  * ---write above data to SDcard along with 'GOOD' or 'BAD'
  * ----if BAD, send SMS message
- * -reset countdown
+ * -reset countdown                                      DONE
  */
